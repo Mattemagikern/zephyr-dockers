@@ -1,0 +1,19 @@
+name: "Fetch zephyr revision"
+
+outputs:
+  sha:
+    description: "The short SHA retrieved"
+    value: ${{ steps.remote_sha.outputs.sha }} 
+
+runs:
+  using: "composite"
+  steps:
+    - name: Get Remote SHA
+      id: remote_sha 
+      shell: bash
+      run: |
+        REPO_URL="https://github.com/zephyrproject-rtos/zephyr.git"
+        FULL_SHA=$(git ls-remote $REPO_URL HEAD | awk '{print $1}')
+        SHORT_SHA=${FULL_SHA:0:7}
+        
+        echo "sha=$SHORT_SHA" >> $GITHUB_OUTPUT

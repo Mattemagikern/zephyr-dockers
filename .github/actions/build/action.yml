@@ -1,0 +1,34 @@
+name: "Build docker image"
+
+inputs:
+  image_name:
+    required: true
+  dockerfile:
+    required: true
+  toolchains:
+    description: Array of toolchains
+    required: false
+    default: '' 
+
+runs:
+  using: composite
+  steps:
+    - name: Prepare Toolchain String
+      id: prep
+      shell: bash
+      run: |
+        CLEAN_LIST=$(echo "${{ inputs.toolchains }}" | tr '\n' ' ' | xargs)
+          echo "list=$CLEAN_LIST" >> $GITHUB_OUTPUT
+
+    - name: Build and Load
+      uses: docker/build-push-action@v5
+      with:
+        context: .
+        file: ${{ inputs.dockerfile }}
+        push: false
+        load: true 
+        tags: ${{ inputs.image_name }}:latest
+        build-args: |
+          TOOLCHAINS=${{ steps.prep.outputs.list }}
+        cache-from: type=gha
+        cache-to: type=gha,mode=max

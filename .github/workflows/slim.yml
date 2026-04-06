@@ -1,0 +1,37 @@
+name: Zephyr Slim dockers
+
+on:
+  repository_dispatch:
+    types: [build-sdk]
+
+jobs:
+  build-slim:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: get version
+        id: zephyr_version
+        uses: ./.github/actions/zephyr_revision
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build Arm-Slim
+        uses: ./.github/actions/build
+        with:
+          image_name: zephyr-arm-slim
+          dockerfile: Dockerfile.base
+          toolchains: |
+            arm-zephyr-eabi
+            x86_64-zephyr-elf
+
+      - name: Publish
+        if: github.event_name == 'workflow_dispatch'
+        uses: ./.github/actions/publish
+        with:
+          tag: ${{ steps.zephyr_version.outputs.sha }}
+          images: |
+            zephyr-arm-slim
