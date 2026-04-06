@@ -1,7 +1,7 @@
 ARG BASE_TAG=latest
 ARG ZEPHYR_REVISION=main
 
-FROM zephyr-base:${BASE_TAG}
+FROM zephyr-full-sdk:${BASE_TAG}
 
 ARG ZEPHYR_REVISION
 USER root
