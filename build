@@ -1,0 +1,16 @@
+#!/bin/bash -e 
+VERSION="1.0.1"
+
+echo "Building Base Image version ${VERSION}..."
+docker build -t zephyr-base:${VERSION} -f Dockerfile.base .
+
+echo "Building Devel Image based on ${VERSION}..."
+docker build --build-arg BASE_TAG=${VERSION} -t zephyr-devel:${VERSION} -f Dockerfile.devel .
+
+echo "Building CI Image based on ${VERSION}..."
+docker build --build-arg BASE_TAG=${VERSION} -t zephyr-ci:${VERSION} -f Dockerfile.ci .
+
+echo "Building nrf Image based on ${VERSION}..."
+docker build --build-arg BASE_TAG=${VERSION} -t zephyr-nrf:${VERSION} -f Dockerfile.nrf .
+
+echo "Done! Images tagged with ${VERSION}"

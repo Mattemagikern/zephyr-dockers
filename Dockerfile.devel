@@ -1,0 +1,15 @@
+ARG BASE_TAG=latest
+ARG ZEPHYR_REVISION=main
+
+FROM zephyr-base:${BASE_TAG}
+
+ARG ZEPHYR_REVISION
+USER root
+
+RUN apt-get update && apt-get install -y --no-install-recommends doxygen graphviz librsvg2-bin \
+	texlive-latex-base texlive-latex-extra latexmk texlive-fonts-recommended imagemagick 
+
+RUN uv pip install -r https://raw.githubusercontent.com/zephyrproject-rtos/zephyr/${ZEPHYR_REVISION}/doc/requirements.in
+RUN uv pip install -r https://raw.githubusercontent.com/zephyrproject-rtos/zephyr/${ZEPHYR_REVISION}/scripts/requirements.txt
+
+USER user

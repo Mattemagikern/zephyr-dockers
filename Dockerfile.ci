@@ -1,0 +1,12 @@
+ARG BASE_TAG=latest
+ARG ZEPHYR_REVISION=main
+
+FROM zephyr-devel:${BASE_TAG}
+
+ARG ZEPHYR_REVISION
+USER root
+
+RUN uv pip install -r https://raw.githubusercontent.com/zephyrproject-rtos/zephyr/${ZEPHYR_REVISION}/scripts/requirements-actions.txt
+RUN uv pip install -r https://raw.githubusercontent.com/zephyrproject-rtos/zephyr/${ZEPHYR_REVISION}/scripts/requirements-run-test.txt
+
+USER user
