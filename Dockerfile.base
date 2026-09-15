@@ -23,6 +23,7 @@ ENV PATH="$VIRTUAL_ENV/bin:$PATH"
 
 RUN uv venv $VIRTUAL_ENV
 RUN uv pip install west
+RUN uv pip install cmake
 RUN uv pip install -r https://raw.githubusercontent.com/zephyrproject-rtos/zephyr/${ZEPHYR_REVISION}/scripts/requirements-base.txt
 
 FROM builder-1 AS builder-2

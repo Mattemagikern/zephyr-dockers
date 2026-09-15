@@ -7,9 +7,37 @@ ARG ZEPHYR_REVISION
 USER root
 
 RUN apt-get update && apt-get install -y --no-install-recommends doxygen graphviz librsvg2-bin \
-	texlive-latex-base texlive-latex-extra latexmk texlive-fonts-recommended imagemagick 
+	texlive-latex-base texlive-latex-extra latexmk texlive-fonts-recommended imagemagick
+
+RUN apt-get install -y coccinelle
+
+# Arm Ecosystem FVPs (x86_64). Versions are stamped in the filename; there is no
+# "latest" permalink. Bump these args to the current release from Arm's IoT FVP page.
+ARG FVP_CDN=https://developer.arm.com/-/cdn-downloads/permalink/FVPs-Corstone-IoT
+ARG FVP_CORSTONE300_TGZ=FVP_Corstone_SSE-300_11.27_42_Linux64.tgz
+ARG FVP_CORSTONE320_TGZ=FVP_Corstone_SSE-320_11.27_25_Linux64.tgz
+
+RUN set -eux; \
+	cd /tmp; \
+	wget -q -O fvp300.tgz "${FVP_CDN}/Corstone-300/${FVP_CORSTONE300_TGZ}"; \
+	tar -xf fvp300.tgz; \
+	./FVP_Corstone_SSE-300.sh --i-agree-to-the-contained-eula --no-interactive -q \
+		-d /opt/fvp-corstone300; \
+	wget -q -O fvp320.tgz "${FVP_CDN}/Corstone-320/${FVP_CORSTONE320_TGZ}"; \
+	tar -xf fvp320.tgz; \
+	./FVP_Corstone_SSE-320.sh --i-agree-to-the-contained-eula --no-interactive -q \
+		-d /opt/fvp-corstone320; \
+	rm -rf /tmp/fvp300.tgz /tmp/fvp320.tgz /tmp/FVP_Corstone_SSE-3*.sh /tmp/license_terms
+
+ENV PATH=/opt/fvp-corstone300/models/Linux64_GCC-9.3:/opt/fvp-corstone320/models/Linux64_GCC-9.3:${PATH}
+ENV LD_LIBRARY_PATH=/opt/fvp-corstone300/python/lib:/opt/fvp-corstone320/python/lib
+
+# Verify both models load their bundled libpython at build time (fails the build early if not)
+RUN FVP_Corstone_SSE-300_Ethos-U55 --version \
+	&& FVP_Corstone_SSE-320 --version
 
 RUN uv pip install -r https://raw.githubusercontent.com/zephyrproject-rtos/zephyr/${ZEPHYR_REVISION}/doc/requirements.in
 RUN uv pip install -r https://raw.githubusercontent.com/zephyrproject-rtos/zephyr/${ZEPHYR_REVISION}/scripts/requirements.txt
+RUN uv pip install -r https://raw.githubusercontent.com/zephyrproject-rtos/zephyr/${ZEPHYR_REVISION}/scripts/requirements-actions.txt
 
 USER user
