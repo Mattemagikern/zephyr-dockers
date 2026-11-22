@@ -1,0 +1,38 @@
+ARG BASE_TAG=latest
+ARG ZEPHYR_REVISION=main
+
+FROM zephyr-base:${BASE_TAG}
+
+ARG ZEPHYR_REVISION
+ARG TARGETARCH
+USER root
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+	coccinelle \
+	graphviz \
+	librsvg2-bin \
+	&& rm -rf /var/lib/apt/lists/*
+
+ARG DOXYGEN_VERSION=1.17.0
+ARG DOXYGEN_SHA256SUM=75419ef4f446fc1c24ef12514b574e66e898ee6f527c6ae2ad84f91a905823c2
+RUN set -eux; \
+	case "${TARGETARCH}" in \
+		amd64) \
+			cd /tmp; \
+			wget -q "https://github.com/doxygen/doxygen/releases/download/Release_${DOXYGEN_VERSION//./_}/doxygen-${DOXYGEN_VERSION}.linux.bin.tar.gz"; \
+			echo "${DOXYGEN_SHA256SUM}  doxygen-${DOXYGEN_VERSION}.linux.bin.tar.gz" | sha256sum -c; \
+			tar -xf "doxygen-${DOXYGEN_VERSION}.linux.bin.tar.gz" -C /usr/local/bin --strip-components=2 "doxygen-${DOXYGEN_VERSION}/bin/doxygen"; \
+			strip /usr/local/bin/doxygen; \
+			rm "doxygen-${DOXYGEN_VERSION}.linux.bin.tar.gz" ;; \
+		arm64) \
+			apt-get update && apt-get install -y --no-install-recommends doxygen && rm -rf /var/lib/apt/lists/* ;; \
+		*) echo "unsupported TARGETARCH=${TARGETARCH}" >&2; exit 1 ;; \
+	esac
+
+RUN doxygen --version
+
+RUN uv pip install -r "https://raw.githubusercontent.com/zephyrproject-rtos/zephyr/${ZEPHYR_REVISION}/scripts/requirements-compliance.txt" \
+	&& uv pip install -r "https://raw.githubusercontent.com/zephyrproject-rtos/zephyr/${ZEPHYR_REVISION}/doc/requirements.txt" \
+		--require-hashes --reinstall-package reuse
+
+USER user

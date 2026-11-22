@@ -1,5 +1,8 @@
 #!/bin/bash -e
+cd "$(dirname "${BASH_SOURCE[0]}")"
+
 VERSION="1.0.2"
+REGISTRY="docker.noctrl.dev"
 
 case "$(uname -m)" in
 	x86_64) TARGETARCH=amd64 ;;
@@ -7,22 +10,26 @@ case "$(uname -m)" in
 	*) echo "unsupported arch $(uname -m)" >&2; exit 1 ;;
 esac
 
-ARGS="--platform linux/${TARGETARCH} --build-arg TARGETARCH=${TARGETARCH}"
-#ARGS+=" --no-cache"
+ARGS=(--platform "linux/${TARGETARCH}" --build-arg "TARGETARCH=${TARGETARCH}")
+if [ "${NO_CACHE:-0}" = "1" ]; then
+	ARGS+=(--no-cache)
+fi
 
 echo "Building Base Image version ${VERSION}..."
-docker build -t zephyr-full-sdk:${VERSION} -f Dockerfile.base . ${ARGS}
+docker build -t "zephyr-base:${VERSION}" -f Dockerfile.base . "${ARGS[@]}"
+
+echo "Building Doc Image based on ${VERSION}..."
+docker build --build-arg "BASE_TAG=${VERSION}" -t "zephyr-doc:${VERSION}" -f Dockerfile.doc . "${ARGS[@]}"
 
 echo "Building Devel Image based on ${VERSION}..."
-docker build --build-arg BASE_TAG=${VERSION} -t zephyr-devel:${VERSION} -f Dockerfile.devel . ${ARGS}
+docker build --build-arg "BASE_TAG=${VERSION}" -t "zephyr-devel:${VERSION}" -f Dockerfile.devel . "${ARGS[@]}"
 
-echo "Building CI Image based on ${VERSION}..."
-docker build --build-arg BASE_TAG=${VERSION} -t zephyr-ci:${VERSION} -f Dockerfile.ci . ${ARGS}
+echo "Building Flash Image based on ${VERSION}..."
+docker build --build-arg "BASE_TAG=${VERSION}" -t "zephyr-flash:${VERSION}" -f Dockerfile.flash . "${ARGS[@]}"
 
-echo "Building nrf Image based on ${VERSION}..."
-docker build --build-arg BASE_TAG=${VERSION} -t zephyr-nrf:${VERSION} -f Dockerfile.nrf . ${ARGS}
+for img in zephyr-base zephyr-doc zephyr-devel zephyr-flash; do
+	docker tag "${img}:${VERSION}" "${REGISTRY}/${img}:${VERSION}"
+	docker push "${REGISTRY}/${img}:${VERSION}"
+done
 
-echo "Building flash Image version ${VERSION}..."
-docker build -t zephyr-flash:${VERSION} -f Dockerfile.flash . ${ARGS}
-
-echo "Done! Images tagged with ${VERSION}"
+echo "Done! Images tagged and pushed with ${VERSION}"

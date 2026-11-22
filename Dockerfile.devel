@@ -1,22 +1,63 @@
 ARG BASE_TAG=latest
 ARG ZEPHYR_REVISION=main
+ARG TOOLCHAINS=""
 
-FROM zephyr-full-sdk:${BASE_TAG}
+FROM zephyr-base:${BASE_TAG} AS sdk-builder
+
+ARG ZEPHYR_REVISION
+ARG TOOLCHAINS
+USER root
+
+WORKDIR /tmp/zephyr-ws
+RUN west init . --mr "${ZEPHYR_REVISION}" \
+	&& west update zephyr \
+	&& if [ -z "${TOOLCHAINS}" ]; then \
+		west sdk install --install-dir /opt/zephyr-sdk; \
+	else \
+		for arch in ${TOOLCHAINS}; do \
+			west sdk install --install-dir /opt/zephyr-sdk -t "$arch"; \
+		done; \
+	fi \
+	&& rm -f /opt/zephyr-sdk/hosttools/*.sh /opt/zephyr-sdk/gnu/*/bin/*-lto-dump \
+	&& find /opt/zephyr-sdk/hosttools/sysroots/*/usr/lib/locale -mindepth 1 -maxdepth 1 ! -name 'C.utf8' ! -name 'C.UTF-8' -exec rm -rf {} + \
+	&& mkdir -p /opt/sdk-host /opt/sdk-gnu-1/gnu /opt/sdk-gnu-2/gnu /opt/sdk-gnu-3/gnu /opt/sdk-gnu-4/gnu \
+	&& for item in /opt/zephyr-sdk/*; do \
+		[ "$(basename "$item")" = "gnu" ] && continue; \
+		mv "$item" /opt/sdk-host/; \
+	done \
+	&& for tc in /opt/zephyr-sdk/gnu/*; do \
+		[ -e "$tc" ] || continue; \
+		case "$(basename "$tc")" in \
+			arm-*|aarch64-*|riscv64-*|x86_64-*) mv "$tc" /opt/sdk-gnu-1/gnu/ ;; \
+			xtensa-[a-m]*) mv "$tc" /opt/sdk-gnu-3/gnu/ ;; \
+			xtensa-*) mv "$tc" /opt/sdk-gnu-4/gnu/ ;; \
+			*) mv "$tc" /opt/sdk-gnu-2/gnu/ ;; \
+		esac; \
+	done
+
+FROM zephyr-base:${BASE_TAG}
 
 ARG ZEPHYR_REVISION
 ARG TARGETARCH
 USER root
 
-RUN apt-get update && apt-get install -y --no-install-recommends graphviz librsvg2-bin \
-	texlive-latex-base texlive-latex-extra latexmk texlive-fonts-recommended imagemagick \
-	bluetooth bluez
+RUN apt-get update && apt-get install -y --no-install-recommends \
+	bluetooth \
+	bluez \
+	ccache \
+	coccinelle \
+	dfu-util \
+	g++ \
+	graphviz \
+	librsvg2-bin \
+	libsdl2-dev \
+	libudev-dev \
+	pkg-config \
+	&& if [ "${TARGETARCH}" = "amd64" ]; then \
+		apt-get install -y --no-install-recommends gcc-multilib g++-multilib; \
+	fi \
+	&& rm -rf /var/lib/apt/lists/*
 
-RUN apt-get install -y coccinelle
-
-# Doxygen, pinned to the version .github/workflows/doc-build.yml uses. The
-# Debian package is too old for the commands the Zephyr Doxyfile aliases
-# expand to (\qualifier, \important), which makes a local doc build drown in
-# warnings that CI never sees.
 ARG DOXYGEN_VERSION=1.17.0
 ARG DOXYGEN_SHA256SUM=75419ef4f446fc1c24ef12514b574e66e898ee6f527c6ae2ad84f91a905823c2
 RUN set -eux; \
@@ -25,20 +66,16 @@ RUN set -eux; \
 			cd /tmp; \
 			wget -q "https://github.com/doxygen/doxygen/releases/download/Release_${DOXYGEN_VERSION//./_}/doxygen-${DOXYGEN_VERSION}.linux.bin.tar.gz"; \
 			echo "${DOXYGEN_SHA256SUM}  doxygen-${DOXYGEN_VERSION}.linux.bin.tar.gz" | sha256sum -c; \
-			tar xf doxygen-${DOXYGEN_VERSION}.linux.bin.tar.gz -C /opt; \
-			rm doxygen-${DOXYGEN_VERSION}.linux.bin.tar.gz ;; \
+			tar -xf "doxygen-${DOXYGEN_VERSION}.linux.bin.tar.gz" -C /usr/local/bin --strip-components=2 "doxygen-${DOXYGEN_VERSION}/bin/doxygen"; \
+			strip /usr/local/bin/doxygen; \
+			rm "doxygen-${DOXYGEN_VERSION}.linux.bin.tar.gz" ;; \
 		arm64) \
-			apt-get update && apt-get install -y --no-install-recommends doxygen ;; \
+			apt-get update && apt-get install -y --no-install-recommends doxygen && rm -rf /var/lib/apt/lists/* ;; \
 		*) echo "unsupported TARGETARCH=${TARGETARCH}" >&2; exit 1 ;; \
 	esac
 
-ENV PATH=/opt/doxygen-${DOXYGEN_VERSION}/bin:${PATH}
-
 RUN doxygen --version
 
-# Arm Ecosystem FVPs (amd64 and arm64). Versions are stamped in the filename;
-# there is no "latest" permalink. Bump these args to the current release from
-# Arm's IoT FVP page.
 ARG FVP_CDN=https://developer.arm.com/-/cdn-downloads/permalink/FVPs-Corstone-IoT
 ARG FVP_CORSTONE300=FVP_Corstone_SSE-300_11.27_42
 ARG FVP_CORSTONE320=FVP_Corstone_SSE-320_11.27_25
@@ -58,27 +95,34 @@ RUN set -eux; \
 	tar -xf fvp320.tgz; \
 	./FVP_Corstone_SSE-320.sh --i-agree-to-the-contained-eula --no-interactive -q \
 		-d /opt/fvp-corstone320; \
+	rm -rf /opt/fvp-corstone300/doc /opt/fvp-corstone300/fmtplib \
+		/opt/fvp-corstone320/doc /opt/fvp-corstone320/fmtplib /opt/fvp-corstone320/python; \
+	ln -s /opt/fvp-corstone300/python /opt/fvp-corstone320/python; \
 	ln -s "$(dirname "$(find /opt/fvp-corstone300/models -maxdepth 2 -name 'FVP_Corstone_SSE-300*' -type f | head -n1)")" /opt/fvp-corstone300/models/bin; \
 	ln -s "$(dirname "$(find /opt/fvp-corstone320/models -maxdepth 2 -name 'FVP_Corstone_SSE-320*' -type f | head -n1)")" /opt/fvp-corstone320/models/bin; \
 	rm -rf /tmp/fvp300.tgz /tmp/fvp320.tgz /tmp/FVP_Corstone_SSE-3*.sh /tmp/license_terms
 
 ENV PATH=/opt/fvp-corstone300/models/bin:/opt/fvp-corstone320/models/bin:${PATH}
-ENV LD_LIBRARY_PATH=/opt/fvp-corstone300/python/lib:/opt/fvp-corstone320/python/lib
+ENV LD_LIBRARY_PATH=/opt/fvp-corstone300/python/lib
 
-# Verify both models load their bundled libpython at build time (fails the build early if not)
 RUN FVP_Corstone_SSE-300_Ethos-U55 --version \
 	&& FVP_Corstone_SSE-320 --version
 
-RUN uv pip install -r https://raw.githubusercontent.com/zephyrproject-rtos/zephyr/${ZEPHYR_REVISION}/scripts/requirements.txt
-RUN uv pip install -r https://raw.githubusercontent.com/zephyrproject-rtos/zephyr/${ZEPHYR_REVISION}/scripts/requirements-actions.txt
+RUN uv pip install -r "https://raw.githubusercontent.com/zephyrproject-rtos/zephyr/${ZEPHYR_REVISION}/scripts/requirements.txt" \
+		--excludes <(printf 'opencv-python\n') \
+	&& uv pip install opencv-python-headless \
+	&& uv pip install -r "https://raw.githubusercontent.com/zephyrproject-rtos/zephyr/${ZEPHYR_REVISION}/scripts/requirements-actions.txt" \
+		--excludes <(printf 'awscli\n') \
+	&& uv pip install -r "https://raw.githubusercontent.com/zephyrproject-rtos/zephyr/${ZEPHYR_REVISION}/doc/requirements.txt" \
+		--require-hashes --reinstall-package reuse
 
-# doc/requirements.txt is the hash-pinned lock CI installs; requirements.in is
-# unpinned and drifts from CI (docutils, sphinx). It goes last so nothing
-# re-resolves the pinned versions afterwards. reuse is force-reinstalled
-# because requirements-base.txt already installed a release reporting the same
-# version as the pinned snapshot, so it would otherwise be skipped.
-RUN uv pip install -r https://raw.githubusercontent.com/zephyrproject-rtos/zephyr/${ZEPHYR_REVISION}/doc/requirements.txt \
-	--require-hashes --reinstall-package reuse
+COPY --from=sdk-builder /opt/sdk-host /opt/zephyr-sdk
+COPY --from=sdk-builder /opt/sdk-gnu-1 /opt/zephyr-sdk
+COPY --from=sdk-builder /opt/sdk-gnu-2 /opt/zephyr-sdk
+COPY --from=sdk-builder /opt/sdk-gnu-3 /opt/zephyr-sdk
+COPY --from=sdk-builder /opt/sdk-gnu-4 /opt/zephyr-sdk
+
+ENV ZEPHYR_SDK_INSTALL_DIR="/opt/zephyr-sdk"
 
 RUN usermod -aG bluetooth user
 USER user

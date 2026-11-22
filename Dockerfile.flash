@@ -1,26 +1,26 @@
-FROM python:3.12-slim-bookworm
+ARG BASE_TAG=latest
+
+FROM zephyr-base:${BASE_TAG}
 
 ARG TARGETARCH
-
 USER root
 
-ENV DEBIAN_FRONTEND=noninteractive
+ENV NRFUTIL_HOME="/opt/nrfutil"
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-	wget \
-	ca-certificates \
 	libudev1 \
+	libxcb-icccm4 \
+	libxcb-image0 \
+	libxcb-keysyms1 \
 	libxcb-render-util0 \
 	libxcb-shape0 \
-	libxcb-icccm4 \
-	libxcb-keysyms1 \
-	libxcb-image0 \
 	libxcb-xkb1 \
-	libxkbcommon-x11-0
+	libxkbcommon-x11-0 \
+	&& rm -rf /var/lib/apt/lists/*
 
-RUN mkdir -p /etc/udev/rules.d
-# Fake udevadm to fool jlink installer.
-RUN printf '#!/bin/bash\necho "Fake udevadm called"\n' > /usr/bin/udevadm && chmod +x /usr/bin/udevadm
+RUN mkdir -p /etc/udev/rules.d \
+	&& printf '#!/bin/bash\necho "Fake udevadm called"\n' > /usr/bin/udevadm \
+	&& chmod +x /usr/bin/udevadm
 
 RUN set -eux; \
 	case "${TARGETARCH}" in \
@@ -32,7 +32,7 @@ RUN set -eux; \
 	dpkg --unpack jlink.deb; \
 	rm -f /var/lib/dpkg/info/jlink.postinst; \
 	apt-get install -f -y; \
-	rm jlink.deb
+	rm -rf jlink.deb /var/lib/apt/lists/*
 
 RUN set -eux; \
 	case "${TARGETARCH}" in \
@@ -41,21 +41,14 @@ RUN set -eux; \
 		*) echo "unsupported TARGETARCH=${TARGETARCH}" >&2; exit 1 ;; \
 	esac; \
 	wget -q "https://files.nordicsemi.com/artifactory/swtools/external/nrfutil/executables/${NRFUTIL_TRIPLE}/nrfutil" -O /usr/local/bin/nrfutil; \
-	chmod +x /usr/local/bin/nrfutil
-
-RUN nrfutil install device && \
-    mkdir -p /etc/udev/rules.d && \
-    nrfutil device --help-install-udev-rules > /etc/udev/rules.d/71-nrfutil.rules
-
-RUN useradd -ms /bin/bash user
-USER user
-
-RUN set -eux; \
+	chmod +x /usr/local/bin/nrfutil; \
+	mkdir -p "${NRFUTIL_HOME}"; \
 	nrfutil install device; \
 	if [ "${TARGETARCH}" = "amd64" ]; then \
 		nrfutil install device nrf5sdk-tools; \
-	else \
-		echo "nrf5sdk-tools is not available on ${TARGETARCH}; skipping"; \
-	fi
+	fi; \
+	nrfutil device --help-install-udev-rules > /etc/udev/rules.d/71-nrfutil.rules; \
+	chown -R user:user "${NRFUTIL_HOME}"
 
+USER user
 CMD ["bash"]
